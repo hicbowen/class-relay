@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, ChevronRight, Clipboard, Ellipsis, LoaderCircle, LogOut, Network, Pencil, QrCode, Radio, Search, Settings, ShieldCheck, UserMinus, UserRound, UserRoundPlus, Users, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { api, errorMessage } from '../api'
 import { Brand, ConnectionBadge, CopyFeedback, copyText, ThemeButton } from '../components/common'
 import { Conversation } from '../components/conversation'
@@ -17,18 +17,34 @@ function Avatar({ student }: { student: Student }) {
   </span>
 }
 
-function StudentRows({ title, students, selected, onSelect }: {
+function StudentRows({ title, students, selected, onSelect, collapsible = false, searching = false }: {
   title: string; students: Student[]; selected: string; onSelect: (id: string) => void
+  collapsible?: boolean; searching?: boolean
 }) {
+  const [expanded, setExpanded] = useState(false)
+  const listId = useId()
   if (!students.length) return null
+  const open = !collapsible || searching || expanded
+  const unread = collapsible ? students.reduce((total, student) => total + student.unread, 0) : 0
+  const heading = <>
+    {title}<span className="student-group-count">{students.length}</span>
+    {unread > 0 && <span className="counter student-group-unread" aria-label={`${unread} 条未读消息`}>{unread > 99 ? '99+' : unread}</span>}
+  </>
   return <div className="student-group">
-    <h2>{title}<span>{students.length}</span></h2>
-    {students.map(student => <button type="button" className="student-row" key={student.id}
-      aria-current={selected === student.id ? 'true' : undefined} onClick={() => onSelect(student.id)}>
-      <Avatar student={student} />
-      <span className="student-row-name">{student.name}</span>
-      {student.unread > 0 && <span className="counter" aria-label={`${student.unread} 条未读消息`}>{student.unread > 99 ? '99+' : student.unread}</span>}
-    </button>)}
+    <h2>{collapsible && !searching
+      ? <button type="button" className="student-group-toggle" aria-expanded={open} aria-controls={listId} onClick={() => setExpanded(value => !value)}>
+        <ChevronRight size={14} aria-hidden="true" />{heading}
+      </button>
+      : <span className="student-group-label">{heading}</span>}
+    </h2>
+    <div id={listId} hidden={!open}>
+      {open && students.map(student => <button type="button" className="student-row" key={student.id}
+        aria-current={selected === student.id ? 'true' : undefined} onClick={() => onSelect(student.id)}>
+        <Avatar student={student} />
+        <span className="student-row-name">{student.name}</span>
+        {student.unread > 0 && <span className="counter" aria-label={`${student.unread} 条未读消息`}>{student.unread > 99 ? '99+' : student.unread}</span>}
+      </button>)}
+    </div>
   </div>
 }
 
@@ -215,7 +231,8 @@ export function TeacherPage() {
   const conversation = current?.id ?? 'all'
   const pending = room?.students.filter(student => student.status === 'pending') ?? []
   const active = room?.students.filter(student => student.status === 'approved') ?? []
-  const matches = (student: Student) => student.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
+  const query = search.trim().toLocaleLowerCase()
+  const matches = (student: Student) => student.name.toLocaleLowerCase().includes(query)
   const online = active.filter(student => student.online)
   const displayOnline = online.filter(matches)
   const displayOffline = active.filter(student => !student.online && matches(student))
@@ -246,22 +263,25 @@ export function TeacherPage() {
             <div><h1 title={room.name}>{room.name}</h1><p>{online.length} 人在线 <span>·</span> {active.length} 位学生</p></div>
             <span className="class-icon"><Users size={19} /></span>
           </div>
-          <Button className="invite-button" onClick={() => setModal('invite')}><QrCode size={17} />邀请学生<ChevronRight size={16} className="ml-auto opacity-70" /></Button>
-          <button className="approval-button" type="button" onClick={() => setModal('requests')}>
-            <UserRoundPlus size={17} />加入申请{pending.length > 0 ? <span className="counter ml-auto">{pending.length}</span> : <ChevronRight size={16} className="ml-auto" />}
-          </button>
+          <div className="sidebar-actions">
+            <Button variant="outline" onClick={() => setModal('invite')}><QrCode size={16} />邀请学生</Button>
+            <Button variant="outline" onClick={() => setModal('requests')}>
+              {pending.length === 0 && <UserRoundPlus size={16} />}加入申请
+              {pending.length > 0 && <span className="counter" aria-label={`${pending.length} 条待审批申请`}>{pending.length > 99 ? '99+' : pending.length}</span>}
+            </Button>
+          </div>
           <div className="sidebar-line" />
           <button className="broadcast-row" type="button" aria-current={conversation === 'all' ? 'true' : undefined} onClick={() => select('all')}>
             <span className="avatar broadcast-avatar"><Radio size={18} /></span>
-            <span><strong>全班广播</strong><small>发送给课堂内所有学生</small></span>
+            <strong>全班广播</strong>
           </button>
           <label className="search"><Search size={16} /><input placeholder="搜索学生" aria-label="搜索学生" value={search} onChange={event => setSearch(event.target.value)} /></label>
         </div>
         <div className="student-list">
           <StudentRows title="在线学生" students={displayOnline} selected={selected} onSelect={select} />
-          <StudentRows title="离线学生" students={displayOffline} selected={selected} onSelect={select} />
-          <StudentRows title="已移除" students={removed} selected={selected} onSelect={select} />
-          {!displayOnline.length && !displayOffline.length && !removed.length && <div className="sidebar-empty"><UserRound size={17} />{search.trim() ? '没有匹配的学生' : '暂无学生，邀请学生加入课堂'}</div>}
+          <StudentRows title="离线学生" students={displayOffline} selected={selected} onSelect={select} collapsible searching={!!query} />
+          <StudentRows title="已移除" students={removed} selected={selected} onSelect={select} collapsible searching={!!query} />
+          {!displayOnline.length && !displayOffline.length && !removed.length && <div className="sidebar-empty"><UserRound size={17} />{query ? '没有匹配的学生' : '暂无学生，邀请学生加入课堂'}</div>}
         </div>
         <footer className="sidebar-footer"><Network size={15} /><span title={room.url}>{room.running ? room.url.replace(/https?:\/\//, '').replace('/student', '') : '局域网服务已停止'}</span>
           <i className={room.running ? 'lan-on' : ''} /></footer>
