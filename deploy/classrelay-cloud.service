@@ -1,0 +1,14 @@
+[Unit]
+Description=ClassRelay classroom relay
+After=network.target
+
+[Service]
+DynamicUser=yes
+StateDirectory=classrelay
+LoadCredential=teacher-password:/etc/classrelay/teacher-password
+ExecStart=/usr/local/bin/classrelay -cloud-url https://relay.example.com -cloud-user teacher -cloud-password-file ${CREDENTIALS_DIRECTORY}/teacher-password -data-dir /var/lib/classrelay
+Restart=on-failure
+RestartSec=3s
+
+[Install]
+WantedBy=multi-user.target
