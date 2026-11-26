@@ -37,25 +37,24 @@ func openBrowser(url string) error {
 func run() error {
 	adminPort := flag.Int("teacher-port", 17888, "教师管理端口")
 	studentPort := flag.Int("student-port", 17887, "学生访问端口")
-	dataDir := flag.String("data-dir", "", "SQLite 数据保存目录（默认系统用户数据目录）")
+	dataDir := flag.String("data-dir", "", "SQLite 数据目录（云端默认 ./data，局域网默认系统用户配置目录）")
 	noBrowser := flag.Bool("no-browser", false, "不自动打开浏览器")
 	cloudURL := flag.String("cloud-url", "", "启用云端模式并设置公网 HTTPS 地址")
 	teacherUser := flag.String("cloud-user", "teacher", "云端教师账号")
-	passwordFile := flag.String("cloud-password-file", "", "云端教师密码文件路径")
+	passwordFile := flag.String("cloud-password-file", "teacher-password", "云端教师密码文件路径（相对于当前目录）")
 	flag.Parse()
 	if *adminPort < 1 || *adminPort > 65535 || *studentPort < 1 || *studentPort > 65535 {
 		return errors.New("端口必须在 1 到 65535 之间")
+	}
+	if *dataDir == "" && *cloudURL != "" {
+		*dataDir = "data"
 	}
 	if *dataDir == "" {
 		dir, err := os.UserConfigDir()
 		if err != nil {
 			return err
 		}
-		folder := "ClassRelay"
-		if *cloudURL != "" {
-			folder = "ClassRelayCloud"
-		}
-		*dataDir = filepath.Join(dir, folder)
+		*dataDir = filepath.Join(dir, "ClassRelay")
 	}
 	host := net.JoinHostPort("127.0.0.1", strconv.Itoa(*adminPort))
 	listener, err := network.ListenIPv4(host)
@@ -71,9 +70,6 @@ func run() error {
 	var app *server.App
 	var handler http.Handler
 	if *cloudURL != "" {
-		if *passwordFile == "" {
-			return errors.New("云端模式需要 -cloud-password-file")
-		}
 		data, err := os.ReadFile(*passwordFile)
 		if err != nil {
 			return fmt.Errorf("读取教师密码文件：%w", err)

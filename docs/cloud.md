@@ -16,35 +16,31 @@
 
 同一节课内，浏览器刷新可以恢复当前身份。课堂结束后，学生即使还保留旧 Cookie，也只有重新签到并获批后才能加入下一节课。
 
-## 部署在 Linux 云服务器
+## 在 Linux 云服务器上直接运行
 
-使用可以从教室访问的域名，为域名配置 DNS 和 HTTPS 证书。下面以已有 Nginx HTTPS 站点和支持 `LoadCredential` 的 systemd 为例。把模板中的 `relay.example.com` 换成自己的域名。
-
-构建机运行：
+在构建机执行以下命令。
 
 ```sh
 make install
 make release
 ```
 
-按云服务器架构选择 `bin/classrelay-linux-amd64` 或 `bin/classrelay-linux-arm64`，上传并安装为 `/usr/local/bin/classrelay`。上传 [systemd 模板](../deploy/classrelay-cloud.service) 到 `/etc/systemd/system/classrelay-cloud.service`。用安全的终端编辑器将教师密码写入 `/etc/classrelay/teacher-password`，设置为 root 所有、权限 `0600`。密码文件只包含密码，允许末尾有换行。教师账号通过服务文件中的 `-cloud-user` 设置。 [systemd 凭证配置](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#Credentials)
+按服务器架构选择 `bin/classrelay-linux-amd64` 或 `bin/classrelay-linux-arm64`，上传到一个专用目录，命名为 `classrelay`。进入该目录，创建权限为 `0600` 的 `teacher-password` 文件，写入 12–256 字节的教师密码。文件只包含密码，末尾可有换行。默认教师账号是 `teacher`，可用 `-cloud-user` 修改。
 
-把 [Nginx 配置片段](../deploy/nginx-classrelay.conf) 放入该域名的 HTTPS `server` 块。配置片段覆盖代理头并关闭响应缓冲，学生端可以通过 SSE 实时接收消息。Go 程序只监听 `127.0.0.1:17888`，浏览器走反向代理的 HTTPS 入口。保持 Nginx 传递的 Host 和 `-cloud-url` 一致。 [Nginx 代理模块](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)
+配置域名和 HTTPS，将 [Nginx 配置片段](../deploy/nginx-classrelay.conf) 放入该域名的 HTTPS `server` 块。配置片段负责传递公网 Host 和 HTTPS 协议，并关闭响应缓冲以支持 SSE。Go 程序默认监听 `127.0.0.1:17888`。 [Nginx 代理模块](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)
 
-修改服务文件和 Nginx 后，在服务器运行：
+在程序目录中执行以下命令，把示例域名换成自己的域名。
 
 ```sh
-sudo systemctl daemon-reload
-sudo systemctl enable --now classrelay-cloud
-sudo nginx -t
-sudo systemctl reload nginx
+chmod +x ./classrelay
+./classrelay -cloud-url https://relay.example.com
 ```
 
-从教室先打开 `/student` 确认可访问，再登录 `/teacher`，用两台设备完成一次签到、消息收发、结束课堂和换人检查。服务问题可查看 `sudo journalctl -u classrelay-cloud`。
+程序在终端前台运行，按 Ctrl+C 停止。需要退出 SSH 后继续运行时，可以在 tmux 会话里执行同一条启动命令。
 
 ## 数据与账号
 
-- 模板使用 `/var/lib/classrelay` 保存 SQLite。修改密码文件后重启服务，教师用新密码登录。
+- 云端模式以执行命令时所在的目录为准，密码读取 `./teacher-password`，SQLite 保存到 `./data/classrelay.sqlite`。可用 `-cloud-password-file` 和 `-data-dir` 指定其他路径。
+- 旧版若使用过云端默认目录 `ClassRelayCloud`，升级时可继续用 `-data-dir` 指向原目录。也可以在停止旧进程后，把完整数据目录复制到新目录下的 `data`。此前通过 systemd 模板部署的数据库位于 `/var/lib/classrelay`。
 - 服务重启后保留历史和正在进行的课堂。教师登录会话保存在进程内，重启后应重新登录。仍在同一堂课且保有有效 Cookie 的学生可以恢复。
-- 为备份数据，先停止课递服务，再复制完整数据目录，最后重新启动服务。
-- 局域网启动方式见 [README](../README.md)。局域网与云端默认使用独立的 SQLite 目录。手动指定 `-data-dir` 时请继续为两个模式使用不同目录。
+- 复制目录前先停止程序。保留完整的 `data` 目录和教师密码文件即可在新位置继续运行。
